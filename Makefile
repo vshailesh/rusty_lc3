@@ -1,6 +1,6 @@
 run:
-	cargo run
+	cargo run --verbose
 build:
-	cargo build
+	cargo build --verbose
 test:
 	cargo test
