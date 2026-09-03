@@ -1,3 +1,6 @@
+use std::{io::{Bytes, Read, Write}, os::fd::AsFd};
+use termios::*;
+use std::os::fd::{AsRawFd, RawFd};
 
 enum KeyboardReg {
     MR_KBSR = 0xFE00,
@@ -66,6 +69,60 @@ enum ConditionFlags {
     5. handle_interrupt()
 */
 
+// const orig_raw_fd: RawFd = std::io::stdout().as_raw_fd();
+// static mut original_termios: Termios = Termios::from_fd().unwrap();
+
+#[derive(Clone, Copy)]
+struct TermiosWrapper {
+    pub termios: Termios,
+    pub rawfd: RawFd,
+}
+
+impl TermiosWrapper {
+    // pub fn get_termios() -> Termios {
+    //     // let raw_fd: RawFd = std::io::stdout().as_raw_fd();
+    //     // let mut termios = Termios::from_fd(raw_fd).unwrap();  
+    //     // self.original_termios;
+    // }
+
+    pub fn get_original_termios() -> Self {
+        let raw_fd: RawFd = std::io::stdin().as_raw_fd();
+        let mut termios = Termios::from_fd(raw_fd).unwrap();
+        
+        Self {
+            termios: termios,
+            rawfd: raw_fd
+        }
+    }
+
+    pub fn set_alternate_termios(new_term: &mut TermiosWrapper) {
+        // set flag
+        new_term.termios.c_lflag &= !ICANON & !ECHO;
+        termios::tcsetattr(new_term.rawfd, TCSANOW, &new_term.termios);
+    }
+
+    pub fn restore_to_original_termios(original_termios: TermiosWrapper) {
+        termios::tcsetattr(original_termios.rawfd, TCSANOW, &original_termios.termios);
+    }
+
+
+}
+
+fn disable_input_buffering() -> (TermiosWrapper, TermiosWrapper) {
+    let mut original_termios = TermiosWrapper::get_original_termios();
+    let mut new_term = original_termios.clone();
+    TermiosWrapper::set_alternate_termios(&mut new_term);
+    (original_termios, new_term)
+}
+
+fn restore_input_buffering(original_termios: TermiosWrapper) {
+    TermiosWrapper::restore_to_original_termios(original_termios);
+}
+
+// fn check_key() -> u16 {
+    
+// }
+
 fn sign_extend(mut x: u16, bit_count: i32) -> u16 {
     let expr = (x >> (bit_count -1)) & 1;
     if expr == 1 {
@@ -107,15 +164,15 @@ fn mem_write(address: u16, val: u16) {
 fn mem_read(address: u16) -> u16 {
     unsafe{
         if address == KeyboardReg::MR_KBSR as u16 {
-            if check_key() {
-                memory[KeyboardReg::MR_KBSR as usize] = 1 << 15;
-                memory[KeyboardReg::MR_KBDR as usize] = //some input function in rust
-            } else {
-                memory[KeyboardReg::MR_KBSR as usize] = 0;
-            }
+            // if check_key() {
+            //     memory[KeyboardReg::MR_KBSR as usize] = 1 << 15;
+            //     memory[KeyboardReg::MR_KBDR as usize] = //some input function in rust
+            // } else {
+            //     memory[KeyboardReg::MR_KBSR as usize] = 0;
+            // }
         }
+        memory[address as usize]  
     }
-    memory[address as usize]  
 }
 
 fn fn_op_add(instr: u16) {
@@ -185,7 +242,7 @@ fn fn_op_jsr(instr: u16) {
             let BaseR: u16 = (instr >> 6) & 0x7;
             reg[Registers::R_PC as usize] = reg[BaseR as usize];
         } else {
-            reg[Registers::R_PC as usize] = reg[Registers::R_PC as usize] + sign_extend((instr >> 0x7FF), 11);
+            reg[Registers::R_PC as usize] = reg[Registers::R_PC as usize] + sign_extend(instr & 0x7FF, 11);
         }
     }
 }
@@ -211,7 +268,7 @@ fn fn_op_ldi(instr: u16) {
 fn fn_op_ldr(instr: u16) {
     let r0: u16 = (instr >> 9) & 0x7;
     let BaseR: u16 = (instr >> 6) & 0x7;
-    let pc_offset6 = (instr & 0x3F);
+    let pc_offset6 = instr & 0x3F;
 
     unsafe {
         reg[r0 as usize] = mem_read(reg[BaseR as usize] + sign_extend(pc_offset6, 6));
@@ -320,6 +377,8 @@ impl From<u16> for TrapCodes {
 
 fn main() {
     
+
+    let (original_termios, new_termios) = disable_input_buffering();
     unsafe {
         reg[Registers::R_COND as usize] = ConditionFlags::FL_ZRO as u16;
     }
@@ -330,8 +389,8 @@ fn main() {
         reg[Registers::R_PC as usize] = PC_START;
     }
 
-    let running: bool = true;
-    while(running) {
+    let mut running: bool = true;
+    while running {
         unsafe {
             let instr: u16 = mem_read(reg[Registers::R_PC as usize]);
             reg[Registers::R_PC as usize] += 1;
@@ -378,36 +437,82 @@ fn main() {
                     unsafe {
                         reg[Registers::R_R7 as usize] = reg[Registers::R_PC as usize];
                         let match_val = instr & 0xFF;
-                        let iohandle = std::io::stdin();
+                        let mut ihandle = std::io::stdin();
                         match TrapCodes::from(match_val) {
                             TrapCodes::TRAP_GETC => {
                                 unsafe {
-                                    // reg[Registers::R_R0 as usize] = iohandle.
+                                    let mut buf = [0; 2];
+                                    let val = ihandle.read_exact(&mut buf);
+                                    let r0_val = u16::from_le_bytes(buf);
+                                    reg[Registers::R_R0 as usize] = r0_val;
+                                    update_flags(Registers::R_R0 as u16);
                                 }
                             },
                             TrapCodes::TRAP_OUT => {
-
+                                unsafe {
+                                    // let mut iohandle = std::io::stdout();
+                                    let r0_char = reg[Registers::R_R0 as usize];
+                                    // iohandle.write
+                                    let chr = std::char::from_u32(r0_char as u32).unwrap();
+                                    // iohandle.write()
+                                    print!("{}", chr);
+                                    std::io::stdout().flush();
+                                }
                             }, 
                             TrapCodes::TRAP_PUTS => {
-
+                                unsafe {
+                                    let mut r0_mem_ptr = reg[Registers::R_R0 as usize];
+                                    loop {
+                                        let val = memory[r0_mem_ptr as usize];
+                                        if val == 0 {
+                                            break;
+                                        }
+                                        let val_chr = std::char::from_u32(val as u32).unwrap();
+                                        print!("{}", val_chr);
+                                        std::io::stdout().flush();
+                                        r0_mem_ptr += 1;
+                                    }
+                                }
                             }, 
                             TrapCodes::TRAP_IN => {
-
+                                unsafe {
+                                    print!("Enter a character: ");
+                                    let mut input = String::new();
+                                    std::io::stdin().read_line(&mut input).unwrap();
+                                    print!("{}", input);
+                                    std::io::stdout().flush();
+                                    reg[Registers::R_R0 as usize] = input.chars().nth(0).unwrap() as u16;
+                                    update_flags(Registers::R_R0 as u16);
+                                }
                             }, 
                             TrapCodes::TRAP_PUTSP => {
-
+                                unsafe {
+                                    let mut r0_mem_ptr = reg[Registers::R_R0 as usize];
+                                    loop {
+                                        let val = memory[r0_mem_ptr as usize];
+                                        if val == 0 {
+                                            break;
+                                        }
+                                        let char1 = val & 0xFF;
+                                        print!("{}", std::char::from_u32(char1 as u32).unwrap());
+                                        std::io::stdout().flush();
+                                        r0_mem_ptr += 1;
+                                    }
+                                }
                             },
                             TrapCodes::TRAP_HALT => {
-
+                                unsafe {
+                                    print!("HALT");
+                                    std::io::stdout().flush();
+                                    running = false;
+                                }
                             }
                         } 
                     }
                 }
                 OPCodes::OP_RES => {
-                    ()
                 },
                 OPCodes::OP_RTI => {
-                    ()
                 }
                 _ => {
                     std::process::abort();
@@ -416,5 +521,5 @@ fn main() {
         }  
     }
     // call restore_input_buffering()
-
+    restore_input_buffering(original_termios);
 }
