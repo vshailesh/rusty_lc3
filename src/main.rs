@@ -1,6 +1,14 @@
-use std::{io::{Bytes, Read, Write}, os::fd::AsFd};
+use std::{io::{Bytes, Read, Write}, os::fd::AsFd, sync::atomic::AtomicBool};
 use termios::*;
 use std::os::fd::{AsRawFd, RawFd};
+use std::sync::atomic::Ordering;
+
+static SIGNALED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn handle_sigint(signal: libc::c_int) {
+    let signal = nix::sys::signal::Signal::try_from(signal).unwrap();
+    SIGNALED.store(signal == nix::sys::signal::Signal::SIGINT, Ordering::Relaxed);
+}
 
 enum KeyboardReg {
     MR_KBSR = 0xFE00,
@@ -96,13 +104,18 @@ impl TermiosWrapper {
     }
 
     pub fn set_alternate_termios(new_term: &mut TermiosWrapper) {
-        // set flag
         new_term.termios.c_lflag &= !ICANON & !ECHO;
-        termios::tcsetattr(new_term.rawfd, TCSANOW, &new_term.termios);
+        let termios_ret_val= termios::tcsetattr(new_term.rawfd, TCSANOW, &new_term.termios);
+        if let Err(e) = termios_ret_val {
+            println!("Error: Unable to Set Alternate Flag for Termios - {}", e);
+        }
     }
 
     pub fn restore_to_original_termios(original_termios: TermiosWrapper) {
-        termios::tcsetattr(original_termios.rawfd, TCSANOW, &original_termios.termios);
+        let termios_ret_val = termios::tcsetattr(original_termios.rawfd, TCSANOW, &original_termios.termios);
+        if let Err(e) = termios_ret_val {
+            println!("Error: Unable to restore terminal flag - {}", e);
+        }
     }
 
 
@@ -119,9 +132,26 @@ fn restore_input_buffering(original_termios: TermiosWrapper) {
     TermiosWrapper::restore_to_original_termios(original_termios);
 }
 
-// fn check_key() -> u16 {
-    
-// }
+fn check_key() -> bool {
+    let mut readfds = nix::sys::select::FdSet::new();
+    let stdin_handle = std::io::stdin();
+    readfds.insert(stdin_handle.as_fd());
+    let mut timeout = nix::sys::time::TimeVal::new(0, 0);
+    let select_res = nix::sys::select::select(1, &mut readfds, None, None, &mut timeout);
+    let ret_val = match select_res {
+        Ok(c_int) => {
+            if c_int != 0 {
+                true
+            } else {
+                false
+            }
+        }, 
+        Err(e) => {
+            false
+        }
+    };
+    ret_val
+}
 
 fn sign_extend(mut x: u16, bit_count: i32) -> u16 {
     let expr = (x >> (bit_count -1)) & 1;
@@ -147,12 +177,67 @@ fn update_flags(r: u16) {
     }
 }
 
-fn read_image_file() {
+// fn read_image_file(fh: std::fs::File) {
+//     let mut origin: u16;
+    
+//     // let b = fh.bytes();
+//     // let b2 = b.next();
 
-}
+//     // // for byte in fh.bytes() {
 
-fn read_image() -> i32{
-    32
+//     // // }
+
+//     let b1 = fh.bytes();
+//     let b2 = b1.next();
+
+//     while
+// }
+
+fn read_image(filepath: String) -> bool {
+    // let file_handle = std::fs::File::open(filepath);
+    // let retval = match file_handle {
+    //     Ok(fh) => {
+    //         read_image_file(fh);
+    //         true
+    //     },
+    //     Err(e) => {
+    //         println!("Error opening file");
+    //         false
+    //     }
+    // };
+    // retval
+
+    let file_vec = std::fs::read(filepath);
+    if let Ok(fv) = file_vec {
+        let mut i = 0;
+        let sz = fv.len();
+        let mut mem_idx: u16 = 0x3000;
+        loop {
+            if i == sz {
+                break;
+            }
+            if i == 0 {
+                let b1 = fv.get(i).unwrap();
+                i += 1;
+                let b2 = fv.get(i).unwrap();
+                let mi = u16::from_be_bytes([*b1, *b2]);
+                mem_idx = mi;
+            } else {
+                let b1 = fv.get(i).unwrap();
+                i += 1;
+                let b2 = fv.get(i).unwrap();
+                let u16_val= u16::from_be_bytes([*b1, *b2]);
+                unsafe {
+                    memory[mem_idx as usize] = u16_val;
+                    mem_idx += 1;
+                }
+            }
+            i += 1;
+        } 
+        true
+    } else {
+        false
+    }
 }
 
 fn mem_write(address: u16, val: u16) {
@@ -161,15 +246,59 @@ fn mem_write(address: u16, val: u16) {
     }
 }
 
+// fn u16_from_char(ch: char) -> u16 {
+//     match ch {
+//         'w' => {
+//             119_u16
+//         },
+//         'a' => {
+//             97_u16
+//         },
+//         's' => {
+//             115_u16
+//         },
+//         'd' => {
+//             100_u16
+//         },
+//         _ => {
+//             0_u16
+//         }
+//     }
+// }
+
+fn u16_from_input(ch: String) -> u16 {
+    match ch.as_str() {
+        "w" => {
+            119_u16
+        },
+        "a" => {
+            97_u16
+        },
+        "s" => {
+            115_u16
+        },
+        "d" => {
+            100_u16
+        },
+        _ => {
+            0_u16
+        }
+    }
+}
+ 
 fn mem_read(address: u16) -> u16 {
     unsafe{
         if address == KeyboardReg::MR_KBSR as u16 {
-            // if check_key() {
-            //     memory[KeyboardReg::MR_KBSR as usize] = 1 << 15;
-            //     memory[KeyboardReg::MR_KBDR as usize] = //some input function in rust
-            // } else {
-            //     memory[KeyboardReg::MR_KBSR as usize] = 0;
-            // }
+            if check_key() {
+                memory[KeyboardReg::MR_KBSR as usize] = 1 << 15;
+                let mut buf: String = String::new();
+                let _ = std::io::stdin().read_to_string(&mut buf);
+                // let input = buf.chars().nth(0).unwrap().to_ascii_lowercase();                
+                // memory[KeyboardReg::MR_KBDR as usize] = u16_from_char(input);
+                memory[KeyboardReg::MR_KBDR as usize] = u16_from_input(buf);
+            } else {
+                memory[KeyboardReg::MR_KBSR as usize] = 0;
+            }
         }
         memory[address as usize]  
     }
@@ -376,7 +505,17 @@ impl From<u16> for TrapCodes {
 }
 
 fn main() {
-    
+    let args = std::env::args();
+    if args.len() < 2 {
+        println!("lc3 [image-file1] ...");
+        std::process::exit(2);
+    }
+
+    // for i in args {
+    //     if !read_image()
+    // }
+    let handler = nix::sys::signal::SigHandler::Handler(handle_sigint);
+    unsafe { nix::sys::signal::signal(nix::sys::signal::Signal::SIGINT, handler) }.unwrap();
 
     let (original_termios, new_termios) = disable_input_buffering();
     unsafe {
@@ -503,7 +642,7 @@ fn main() {
                             TrapCodes::TRAP_HALT => {
                                 unsafe {
                                     print!("HALT");
-                                    std::io::stdout().flush();
+                                    let _ = std::io::stdout().flush();
                                     running = false;
                                 }
                             }
