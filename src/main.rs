@@ -68,15 +68,6 @@ enum ConditionFlags {
     FL_NEG = 1 << 2_u16,
 }
 
-/*
-    Handle these things here 
-    1. terminal io 
-    2. disable_input_buffering
-    3. restore_input_buffering,
-    4. check_key ()
-    5. handle_interrupt()
-*/
-
 #[derive(Clone, Copy)]
 struct TermiosWrapper {
     pub termios: Termios,
@@ -150,10 +141,6 @@ fn sign_extend(mut x: u16, bit_count: i32) -> u16 {
         x |= (0xFFFF << bit_count);
     }
     return x;
-}
-
-fn swap16(x: u16) -> u16 {
-    x << 8 | x >> 8
 }
 
 fn update_flags(r: u16) {
@@ -389,11 +376,9 @@ fn mem_read(address: u16) -> u16 {
         if address == KeyboardReg::MR_KBSR as u16 {
             if check_key() {
                 memory[KeyboardReg::MR_KBSR as usize] = 1_u16 << 15;
-                let mut buf: String = String::new();
-                let _ = std::io::stdin().read_line(&mut buf);
-                let input = buf.chars().nth(0).unwrap().to_ascii_lowercase();                
-                memory[KeyboardReg::MR_KBDR as usize] = u16_from_char(input);
-                
+                let console_term_instance =  console::Term::stdout();     
+                let single_char_input = console::Term::read_char(&console_term_instance).unwrap();          
+                memory[KeyboardReg::MR_KBDR as usize] = u16_from_char(single_char_input);                
             } else {
                 memory[KeyboardReg::MR_KBSR as usize] = 0_u16;
             }
@@ -711,11 +696,10 @@ fn main() {
                         match TrapCodes::from(match_val) {
                             TrapCodes::TRAP_GETC => {
                                 unsafe {
-                                    let mut ihandle = std::io::stdin();
-                                    let mut buf = String::new();
-                                    let _  = ihandle.read_line(&mut buf);
-                                    let input = buf.chars().nth(0).unwrap().to_ascii_lowercase();
-                                    let r0_val = u16_from_char(input);
+                                    let console_term_instance =  console::Term::stdout();     
+                                    let single_char_input = console::Term::read_char(&console_term_instance).unwrap();
+
+                                    let r0_val = u16_from_char(single_char_input);
                                     reg[Registers::R_R0 as usize] = r0_val;
                                     update_flags(Registers::R_R0 as u16);
                                 }
@@ -746,12 +730,11 @@ fn main() {
                             TrapCodes::TRAP_IN => {
                                 unsafe {
                                     print!("Enter a character: ");
-                                    let mut input = String::new();
-                                    std::io::stdin().read_line(&mut input).unwrap();
-                                    print!("{}", input);
+                                    let console_term_instance =  console::Term::stdout();     
+                                    let single_char_input = console::Term::read_char(&console_term_instance).unwrap();
+                                    print!("{}", single_char_input);
                                     std::io::stdout().flush().unwrap();
-                                    let input = input.chars().nth(0).unwrap();
-                                    reg[Registers::R_R0 as usize] = u16_from_char(input);
+                                    reg[Registers::R_R0 as usize] = u16_from_char(single_char_input);
                                     update_flags(Registers::R_R0 as u16);
                                 }
                             }, 
