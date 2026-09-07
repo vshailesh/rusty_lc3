@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+console = "0.16.4"
 libc = "0.2.189"
 nix = { version = "0.31.3", features = ["poll", "signal"] }
 termios = "0.3.3"
