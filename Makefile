@@ -4,3 +4,5 @@ build:
 	cargo build --verbose
 test:
 	cargo test
+fmt:
+	cargo fmt

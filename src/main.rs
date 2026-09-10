@@ -1,13 +1,16 @@
-use std::{fs::read, io::{Bytes, Read, Write}, os::fd::AsFd, sync::atomic::AtomicBool};
-use termios::*;
 use std::os::fd::{AsRawFd, RawFd};
 use std::sync::atomic::Ordering;
+use std::{io::Write, os::fd::AsFd, sync::atomic::AtomicBool};
+use termios::*;
 
 static SIGNALED: AtomicBool = AtomicBool::new(false);
 
 extern "C" fn handle_sigint(signal: libc::c_int) {
     let signal = nix::sys::signal::Signal::try_from(signal).unwrap();
-    SIGNALED.store(signal == nix::sys::signal::Signal::SIGINT, Ordering::Relaxed);
+    SIGNALED.store(
+        signal == nix::sys::signal::Signal::SIGINT,
+        Ordering::Relaxed,
+    );
 }
 
 enum KeyboardReg {
@@ -44,8 +47,8 @@ enum Registers {
 static mut reg: [u16; Registers::R_COUNT as usize] = [0_u16; Registers::R_COUNT as usize];
 
 enum OPCodes {
-    OP_BR = 0, 
-    OP_ADD, 
+    OP_BR = 0,
+    OP_ADD,
     OP_LD,
     OP_ST,
     OP_JSR,
@@ -78,29 +81,28 @@ impl TermiosWrapper {
     pub fn get_original_termios() -> Self {
         let raw_fd: RawFd = std::io::stdin().as_raw_fd();
         let mut termios = Termios::from_fd(raw_fd).unwrap();
-        
+
         Self {
             termios: termios,
-            rawfd: raw_fd
+            rawfd: raw_fd,
         }
     }
 
     pub fn set_alternate_termios(new_term: &mut TermiosWrapper) {
         new_term.termios.c_lflag = new_term.termios.c_lflag & !ICANON & !ECHO;
-        let termios_ret_val= termios::tcsetattr(new_term.rawfd, TCSANOW, &new_term.termios);
+        let termios_ret_val = termios::tcsetattr(new_term.rawfd, TCSANOW, &new_term.termios);
         if let Err(e) = termios_ret_val {
             println!("Error: Unable to Set Alternate Flag for Termios - {}", e);
         }
     }
 
     pub fn restore_to_original_termios(original_termios: TermiosWrapper) {
-        let termios_ret_val = termios::tcsetattr(original_termios.rawfd, TCSANOW, &original_termios.termios);
+        let termios_ret_val =
+            termios::tcsetattr(original_termios.rawfd, TCSANOW, &original_termios.termios);
         if let Err(e) = termios_ret_val {
             println!("Error: Unable to restore terminal flag - {}", e);
         }
     }
-
-
 }
 
 fn disable_input_buffering() -> (TermiosWrapper, TermiosWrapper) {
@@ -127,16 +129,14 @@ fn check_key() -> bool {
             } else {
                 false
             }
-        }, 
-        Err(e) => {
-            false
         }
+        Err(e) => false,
     };
     ret_val
 }
 
 fn sign_extend(mut x: u16, bit_count: i32) -> u16 {
-    let expr = (x >> (bit_count -1)) & 1;
+    let expr = (x >> (bit_count - 1)) & 1;
     if expr == 1 {
         x |= (0xFFFF << bit_count);
     }
@@ -175,14 +175,14 @@ fn read_image(filepath: String) -> bool {
                 let b1 = fv.get(i).unwrap();
                 i += 1;
                 let b2 = fv.get(i).unwrap();
-                let u16_val= u16::from_be_bytes([*b1, *b2]);
+                let u16_val = u16::from_be_bytes([*b1, *b2]);
                 unsafe {
                     memory[mem_idx as usize] = u16_val;
                 }
                 mem_idx += 1;
             }
             i += 1;
-        } 
+        }
         true
     } else {
         false
@@ -197,193 +197,52 @@ fn mem_write(address: u16, val: u16) {
 
 fn u16_from_char(ch: char) -> u16 {
     match ch {
-        'a' => {
-            97_u16
-        },
-        'b' => {
-            98_u16
-        },
-        'c' => {
-            99_u16
-        },
-        'd' => {
-            100_u16
-        },
-        'e' => {
-            101_u16
-        },
-        'f' => {
-            102_u16
-        },
-        'g' => {
-            103_u16
-        },
-        'h' => {
-            104_u16
-        },
-        'i' => {
-            105_u16
-        },
-        'j' => {
-            106_u16
-        },
-        'k' => {
-            107_u16
-        },
-        'l' => {
-            108_u16
-        },
-        'm' => {
-            109_u16
-        },
-        'n' => {
-            110_u16
-        },
-        'o' => {
-            111_u16
-        },
-        'p' => {
-            112_u16
-        },
-        'q' => {
-            113_u16
-        },
-        'r' => {
-            114_u16
-        },
-        's' => {
-            115_u16
-        },
-        't' => {
-            116_u16
-        },
-        'u' => {
-            117_u16
-        },
-        'v' => {
-            118_u16
-        },
-        'w' => {
-            119_u16
-        },
-        'x' => {
-            120_u16
-        },
-        'y' => {
-            121_u16
-        },
-        'z' => {
-            122_u16
-        },
+        'a' => 97_u16,
+        'b' => 98_u16,
+        'c' => 99_u16,
+        'd' => 100_u16,
+        'e' => 101_u16,
+        'f' => 102_u16,
+        'g' => 103_u16,
+        'h' => 104_u16,
+        'i' => 105_u16,
+        'j' => 106_u16,
+        'k' => 107_u16,
+        'l' => 108_u16,
+        'm' => 109_u16,
+        'n' => 110_u16,
+        'o' => 111_u16,
+        'p' => 112_u16,
+        'q' => 113_u16,
+        'r' => 114_u16,
+        's' => 115_u16,
+        't' => 116_u16,
+        'u' => 117_u16,
+        'v' => 118_u16,
+        'w' => 119_u16,
+        'x' => 120_u16,
+        'y' => 121_u16,
+        'z' => 122_u16,
         _ => {
             println!("Not an ASCII Character");
             std::process::abort();
-            0_u16
         }
     }
 }
 
-fn u16_from_input(ch: String) -> u16 {
-    match ch.as_str() {
-        "a" => {
-            97_u16
-        },
-        "b" => {
-            98_u16
-        },
-        "c" => {
-            99_u16
-        },
-        "d" => {
-            100_u16
-        },
-        "e" => {
-            101_u16
-        },
-        "f" => {
-            102_u16
-        },
-        "g" => {
-            103_u16
-        },
-        "h" => {
-            104_u16
-        },
-        "i" => {
-            105_u16
-        },
-        "j" => {
-            106_u16
-        },
-        "k" => {
-            107_u16
-        },
-        "l" => {
-            108_u16
-        },
-        "m" => {
-            109_u16
-        },
-        "n" => {
-            110_u16
-        },
-        "o" => {
-            111_u16
-        },
-        "p" => {
-            112_u16
-        },
-        "q" => {
-            113_u16
-        },
-        "r" => {
-            114_u16
-        },
-        "s" => {
-            115_u16
-        },
-        "t" => {
-            116_u16
-        },
-        "u" => {
-            117_u16
-        },
-        "v" => {
-            118_u16
-        },
-        "w" => {
-            119_u16
-        },
-        "x" => {
-            120_u16
-        },
-        "y" => {
-            121_u16
-        },
-        "z" => {
-            122_u16
-        },
-        _ => {
-            println!("Not an ASCII Character");
-            std::process::abort();
-            0_u16
-        }
-    }
-}
- 
 fn mem_read(address: u16) -> u16 {
-    unsafe{
+    unsafe {
         if address == KeyboardReg::MR_KBSR as u16 {
             if check_key() {
                 memory[KeyboardReg::MR_KBSR as usize] = 1_u16 << 15;
-                let console_term_instance =  console::Term::stdout();     
-                let single_char_input = console::Term::read_char(&console_term_instance).unwrap();          
-                memory[KeyboardReg::MR_KBDR as usize] = u16_from_char(single_char_input);                
+                let console_term_instance = console::Term::stdout();
+                let single_char_input = console::Term::read_char(&console_term_instance).unwrap();
+                memory[KeyboardReg::MR_KBDR as usize] = u16_from_char(single_char_input);
             } else {
                 memory[KeyboardReg::MR_KBSR as usize] = 0_u16;
             }
         }
-        memory[address as usize]  
+        memory[address as usize]
     }
 }
 
@@ -440,8 +299,8 @@ fn fn_op_br(instr: u16) {
     unsafe {
         let if_condition = cond_flag & reg[Registers::R_COND as usize];
         if if_condition != 0 {
-            let reg_pc_val= reg[Registers::R_PC as usize];
-            reg[Registers::R_PC as usize] =  pc_offset.overflowing_add(reg_pc_val).0;
+            let reg_pc_val = reg[Registers::R_PC as usize];
+            reg[Registers::R_PC as usize] = pc_offset.overflowing_add(reg_pc_val).0;
         }
     }
 }
@@ -464,7 +323,6 @@ fn fn_op_jsr(instr: u16) {
             let reg_pc_val = reg[Registers::R_PC as usize];
             let pc_offset11 = sign_extend(instr & 0x7FF, 11);
             reg[Registers::R_PC as usize] = reg_pc_val.overflowing_add(pc_offset11).0;
-
         }
     }
 }
@@ -543,7 +401,7 @@ fn fn_op_str(instr: u16) {
     let pc_offset6 = sign_extend(instr & 0x3F, 6);
     unsafe {
         let reg1_value = reg[r1 as usize];
-        let mem_write_address = pc_offset6.overflowing_add(reg1_value); 
+        let mem_write_address = pc_offset6.overflowing_add(reg1_value);
         mem_write(mem_write_address.0, reg[r0 as usize]);
     }
 }
@@ -589,24 +447,12 @@ impl From<u16> for OPCodes {
 impl From<u16> for TrapCodes {
     fn from(item: u16) -> Self {
         match item {
-            32 => {
-                TrapCodes::TRAP_GETC
-            },
-            33 => {
-                TrapCodes::TRAP_OUT
-            },
-            34 => {
-                TrapCodes::TRAP_PUTS
-            }
-            35 => {
-                TrapCodes::TRAP_IN
-            }, 
-            36 => {
-                TrapCodes::TRAP_PUTSP
-            },
-            37 => {
-                TrapCodes::TRAP_HALT
-            },
+            32 => TrapCodes::TRAP_GETC,
+            33 => TrapCodes::TRAP_OUT,
+            34 => TrapCodes::TRAP_PUTS,
+            35 => TrapCodes::TRAP_IN,
+            36 => TrapCodes::TRAP_PUTSP,
+            37 => TrapCodes::TRAP_HALT,
             _ => {
                 println!("TRAP Abort");
                 std::process::abort()
@@ -636,7 +482,7 @@ fn main() {
     }
 
     let PC_START: u16 = 0x3000;
-    
+
     unsafe {
         reg[Registers::R_PC as usize] = PC_START;
     }
@@ -648,132 +494,118 @@ fn main() {
             let reg_pc_val = reg[Registers::R_PC as usize];
             reg[Registers::R_PC as usize] = reg_pc_val.overflowing_add(1).0;
             let op: u16 = instr >> 12;
-            
+
             match OPCodes::from(op) {
                 OPCodes::OP_ADD => {
                     fn_op_add(instr);
-                },
+                }
                 OPCodes::OP_AND => {
                     fn_op_and(instr);
-                },
+                }
                 OPCodes::OP_NOT => {
                     fn_op_not(instr);
-                }, 
+                }
                 OPCodes::OP_BR => {
                     fn_op_br(instr);
-                },
+                }
                 OPCodes::OP_JMP => {
                     fn_op_jmp(instr);
-                },
+                }
                 OPCodes::OP_JSR => {
                     fn_op_jsr(instr);
-                },
+                }
                 OPCodes::OP_LD => {
                     fn_op_ld(instr);
-                },
+                }
                 OPCodes::OP_LDI => {
                     fn_op_ldi(instr);
-                },
+                }
                 OPCodes::OP_LDR => {
                     fn_op_ldr(instr);
-                }, 
+                }
                 OPCodes::OP_LEA => {
                     fn_op_lea(instr);
-                }, 
+                }
                 OPCodes::OP_ST => {
                     fn_op_st(instr);
-                },
+                }
                 OPCodes::OP_STI => {
                     fn_op_sti(instr);
-                },
+                }
                 OPCodes::OP_STR => {
                     fn_op_str(instr);
-                },
+                }
                 OPCodes::OP_TRAP => {
-                    unsafe {
-                        reg[Registers::R_R7 as usize] = reg[Registers::R_PC as usize];
-                        let match_val = instr & 0xFF;
-                        match TrapCodes::from(match_val) {
-                            TrapCodes::TRAP_GETC => {
-                                unsafe {
-                                    let console_term_instance =  console::Term::stdout();     
-                                    let single_char_input = console::Term::read_char(&console_term_instance).unwrap();
+                    reg[Registers::R_R7 as usize] = reg[Registers::R_PC as usize];
+                    let match_val = instr & 0xFF;
+                    match TrapCodes::from(match_val) {
+                        TrapCodes::TRAP_GETC => {
+                            let console_term_instance = console::Term::stdout();
+                            let single_char_input =
+                                console::Term::read_char(&console_term_instance).unwrap();
 
-                                    let r0_val = u16_from_char(single_char_input);
-                                    reg[Registers::R_R0 as usize] = r0_val;
-                                    update_flags(Registers::R_R0 as u16);
+                            let r0_val = u16_from_char(single_char_input);
+                            reg[Registers::R_R0 as usize] = r0_val;
+                            update_flags(Registers::R_R0 as u16);
+                        }
+                        TrapCodes::TRAP_OUT => {
+                            let r0_char = reg[Registers::R_R0 as usize];
+                            let chr = std::char::from_u32(r0_char as u32).unwrap();
+                            print!("{}", chr);
+                            std::io::stdout().flush().unwrap();
+                        }
+                        TrapCodes::TRAP_PUTS => {
+                            let mut r0_mem_ptr = reg[Registers::R_R0 as usize];
+                            loop {
+                                let val = memory[r0_mem_ptr as usize];
+                                if val == 0 {
+                                    break;
                                 }
-                            },
-                            TrapCodes::TRAP_OUT => {
-                                unsafe {
-                                    let r0_char = reg[Registers::R_R0 as usize];
-                                    let chr = std::char::from_u32(r0_char as u32).unwrap();
-                                    print!("{}", chr);
-                                    std::io::stdout().flush().unwrap();
-                                }
-                            }, 
-                            TrapCodes::TRAP_PUTS => {
-                                unsafe {
-                                    let mut r0_mem_ptr = reg[Registers::R_R0 as usize];
-                                    loop {
-                                        let val = memory[r0_mem_ptr as usize];
-                                        if val == 0 {
-                                            break;
-                                        }
-                                        let val_chr = std::char::from_u32(val as u32).unwrap();
-                                        print!("{}", val_chr);
-                                        std::io::stdout().flush().unwrap();
-                                        r0_mem_ptr = r0_mem_ptr.overflowing_add(1_u16).0;
-                                    }
-                                }
-                            }, 
-                            TrapCodes::TRAP_IN => {
-                                unsafe {
-                                    print!("Enter a character: ");
-                                    let console_term_instance =  console::Term::stdout();     
-                                    let single_char_input = console::Term::read_char(&console_term_instance).unwrap();
-                                    print!("{}", single_char_input);
-                                    std::io::stdout().flush().unwrap();
-                                    reg[Registers::R_R0 as usize] = u16_from_char(single_char_input);
-                                    update_flags(Registers::R_R0 as u16);
-                                }
-                            }, 
-                            TrapCodes::TRAP_PUTSP => {
-                                unsafe {
-                                    let mut r0_mem_ptr = reg[Registers::R_R0 as usize];
-                                    loop {
-                                        let val = memory[r0_mem_ptr as usize];
-                                        if val == 0 {
-                                            break;
-                                        }
-                                        let char1 = val & 0xFF;
-                                        print!("{}", std::char::from_u32(char1 as u32).unwrap());
-                                        let _ = std::io::stdout().flush().unwrap();
-                                        let char2 = char1 >> 8;
-                                        if char2 == 1 {
-                                            print!("{}", std::char::from_u32(char1 as u32).unwrap());
-                                            let _ = std::io::stdout().flush().unwrap();
-                                        }
-                                        r0_mem_ptr = r0_mem_ptr.overflowing_add(1_u16).0;
-                                    }
-                                }
-                            },
-                            TrapCodes::TRAP_HALT => {
-                                unsafe {
-                                    print!("HALT");
-                                    let _ = std::io::stdout().flush().unwrap();
-                                    running = false;
-                                }
+                                let val_chr = std::char::from_u32(val as u32).unwrap();
+                                print!("{}", val_chr);
+                                std::io::stdout().flush().unwrap();
+                                r0_mem_ptr = r0_mem_ptr.overflowing_add(1_u16).0;
                             }
-                        } 
+                        }
+                        TrapCodes::TRAP_IN => {
+                            print!("Enter a character: ");
+                            let console_term_instance = console::Term::stdout();
+                            let single_char_input =
+                                console::Term::read_char(&console_term_instance).unwrap();
+                            print!("{}", single_char_input);
+                            std::io::stdout().flush().unwrap();
+                            reg[Registers::R_R0 as usize] = u16_from_char(single_char_input);
+                            update_flags(Registers::R_R0 as u16);
+                        }
+                        TrapCodes::TRAP_PUTSP => {
+                            let mut r0_mem_ptr = reg[Registers::R_R0 as usize];
+                            loop {
+                                let val = memory[r0_mem_ptr as usize];
+                                if val == 0 {
+                                    break;
+                                }
+                                let char1 = val & 0xFF;
+                                print!("{}", std::char::from_u32(char1 as u32).unwrap());
+                                let _ = std::io::stdout().flush().unwrap();
+                                let char2 = char1 >> 8;
+                                if char2 == 1 {
+                                    print!("{}", std::char::from_u32(char1 as u32).unwrap());
+                                    let _ = std::io::stdout().flush().unwrap();
+                                }
+                                r0_mem_ptr = r0_mem_ptr.overflowing_add(1_u16).0;
+                            }
+                        }
+                        TrapCodes::TRAP_HALT => {
+                            print!("HALT");
+                            let _ = std::io::stdout().flush().unwrap();
+                            running = false;
+                        }
                     }
-                },
+                }
                 OPCodes::OP_RES => {
                     std::process::abort();
-                },
-                OPCodes::OP_RTI => {
-                    std::process::abort()
-                },
+                }
+                OPCodes::OP_RTI => std::process::abort(),
                 _ => {
                     std::process::abort();
                 }
